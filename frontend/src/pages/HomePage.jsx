@@ -35,8 +35,15 @@ export default function HomePage() {
           }
         });
         if (!cancelled) {
-          setItems(Array.isArray(res.data.items) ? res.data.items : []);
-          setTotal(Number(res.data.total) || 0);
+          const data = res.data;
+          // Legacy API returned a bare array; current API returns { items, total, limit, skip }.
+          if (Array.isArray(data)) {
+            setTotal(data.length);
+            setItems(data.slice(sk, sk + PAGE_SIZE));
+          } else {
+            setItems(Array.isArray(data?.items) ? data.items : []);
+            setTotal(Number(data?.total) || 0);
+          }
           setStatus("success");
         }
       } catch (_err) {

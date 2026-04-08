@@ -3,6 +3,40 @@ import { NavLink } from "react-router-dom";
 import api from "../api/api.js";
 import { useAuth } from "../context/AuthContext.jsx";
 
+/** When GET /products/categories is missing (older API) or fails, derive names from catalog. */
+async function inferCategoriesFromProducts() {
+  const catSet = new Set();
+  let skip = 0;
+  const limit = 100;
+
+  for (;;) {
+    const res = await api.get("/products", { params: { limit, skip } });
+    const data = res.data;
+    const items = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.items)
+        ? data.items
+        : [];
+
+    for (const p of items) {
+      const c = typeof p?.category === "string" ? p.category.trim() : "";
+      if (c) catSet.add(c);
+    }
+
+    if (Array.isArray(data)) {
+      break;
+    }
+
+    const total = Number(data?.total) ?? 0;
+    skip += limit;
+    if (items.length < limit || skip >= total) {
+      break;
+    }
+  }
+
+  return [...catSet].sort((a, b) => a.localeCompare(b));
+}
+
 export default function Sidebar({ onNavigate }) {
   const { user, status } = useAuth();
   const [categories, setCategories] = useState([]);
@@ -13,12 +47,23 @@ export default function Sidebar({ onNavigate }) {
     async function load() {
       try {
         const res = await api.get("/products/categories");
+        if (cancelled) return;
+        const fromApi = Array.isArray(res.data) ? res.data : [];
         if (!cancelled) {
-          setCategories(Array.isArray(res.data) ? res.data : []);
+          setCategories(fromApi);
           setCatStatus("success");
         }
       } catch (_e) {
-        if (!cancelled) setCatStatus("error");
+        if (cancelled) return;
+        try {
+          const inferred = await inferCategoriesFromProducts();
+          if (!cancelled) {
+            setCategories(inferred);
+            setCatStatus("success");
+          }
+        } catch {
+          if (!cancelled) setCatStatus("error");
+        }
       }
     }
     load();
